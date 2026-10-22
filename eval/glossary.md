@@ -86,6 +86,7 @@ database at freeze time). Common meanings:
 - `PullRequestReviewCommentEvent` — a comment on a pull request review.
 - `CreateEvent` — a branch or tag was created.
 - `DeleteEvent` — a branch or tag was deleted.
+- `DiscussionEvent` — a repository discussion was created, answered, or updated.
 - `ForkEvent` — the repository was forked.
 - `ReleaseEvent` — a release was published.
 - `CommitCommentEvent` — a comment on a commit.
