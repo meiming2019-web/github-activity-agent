@@ -1,0 +1,12 @@
+CreateEvent
+DeleteEvent
+DiscussionEvent
+ForkEvent
+IssueCommentEvent
+IssuesEvent
+PullRequestEvent
+PullRequestReviewCommentEvent
+PullRequestReviewEvent
+PushEvent
+ReleaseEvent
+WatchEvent
