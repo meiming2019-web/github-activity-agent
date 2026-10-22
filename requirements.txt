@@ -1,0 +1,7 @@
+duckdb==2.0.0
+mcp==2.3.0
+pydantic==2.14.1
+pytest==9.1.1
+sqlglot==30.24.0
+requests==2.34.2
+tqdm==4.70.1
