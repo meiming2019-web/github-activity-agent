@@ -3,3 +3,5 @@ data/
 .env
 __pycache__/
 *.duckdb
+eval/traces.jsonl
+.DS_Store

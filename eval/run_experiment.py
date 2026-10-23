@@ -80,7 +80,8 @@ async def run_experiments(questions, configs, client, session, glossary, results
         record = loop.sanitize({
             "question_id": question["id"], "config": config, "status": trace["status"],
             **grade, "prompt_tokens": trace["prompt_tokens"], "completion_tokens": trace["completion_tokens"],
-            "tool_call_count": trace["tool_call_count"], "latency_ms": (perf_counter() - started) * 1000,
+            "tool_call_count": trace["tool_call_count"], "tool_names": [entry["name"] for entry in trace["tool_calls"]],
+            "latency_ms": (perf_counter() - started) * 1000,
             "answer_sql": trace["answer_sql"], "answer_columns": trace["answer_columns"],
             "answer_rows": trace["answer_rows"], "answer_truncated": trace["answer_truncated"],
             "submitted": trace["submitted"],
