@@ -46,6 +46,7 @@ Tokens include all recorded attempts; each question/config counts once in the pa
 | t30 | PASS | PASS | PASS |
 
 ## Grader v2 re-score (post-hoc, disclosed)
+Test set = batch 1 (t01-t30, frozen 2026-10-23) + batch 2 (u01-u30, frozen 2026-10-23), identical authoring protocol; batch 2 graded under grader v2 from first run.
 
 Agent attempts frozen first-write-wins; no agent re-runs. Re-scoring applied two disclosed corrections:
 (1) answer-key errata — expected identifier repo_id replaced by repo name (1:1 isomorphic in catalog; questions ask "which repositories", never IDs);

@@ -1,5 +1,6 @@
 """Disclosed offline re-scoring of frozen first-write-wins experiment records."""
 
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -111,9 +112,12 @@ def regrade(questions_path=ROOT / "eval/github_test_questions.jsonl", runs_path=
             "t07_evidence": evidence}
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--questions", type=Path, default=ROOT / "eval/github_test_questions.jsonl", help="Question JSONL file")
+    args = parser.parse_args(argv)
     try:
-        print(json.dumps(regrade(), ensure_ascii=False, allow_nan=False))
+        print(json.dumps(regrade(questions_path=args.questions), ensure_ascii=False, allow_nan=False))
         return 0
     except Exception as error:
         print(f"Offline re-scoring blocked: {error}", file=sys.stderr)
