@@ -6,9 +6,9 @@ Reference date: 2026-10-22 (UTC).
 
 | Config | Passed / questions | Prompt tokens | Completion tokens | Total tokens |
 |---|---:|---:|---:|---:|
-| A | 11/30 | 398207 | 4975 | 403182 |
-| B | 12/30 | 1854115 | 29334 | 1883449 |
-| C | 14/30 | 2059947 | 31924 | 2091871 |
+| A | 37/60 | 797400 | 11149 | 808549 |
+| B | 40/60 | 3397054 | 58183 | 3455237 |
+| C | 40/60 | 3947586 | 67291 | 4014877 |
 
 Tokens include all recorded attempts; each question/config counts once in the pass matrix.
 
@@ -44,9 +44,38 @@ Tokens include all recorded attempts; each question/config counts once in the pa
 | t28 | FAIL (missing_columns) | FAIL (missing_columns) | FAIL (missing_columns) |
 | t29 | FAIL (missing_columns) | FAIL (missing_columns) | FAIL (missing_columns) |
 | t30 | PASS | PASS | PASS |
+| u01 | PASS | PASS | PASS |
+| u02 | PASS | PASS | PASS |
+| u03 | PASS | PASS | PASS |
+| u04 | PASS | PASS | PASS |
+| u05 | PASS | PASS | PASS |
+| u06 | PASS | PASS | PASS |
+| u07 | PASS | PASS | PASS |
+| u08 | PASS | PASS | PASS |
+| u09 | PASS | PASS | PASS |
+| u10 | PASS | PASS | PASS |
+| u11 | PASS | PASS | FAIL (wrong_result_set) |
+| u12 | PASS | PASS | PASS |
+| u13 | PASS | PASS | PASS |
+| u14 | PASS | PASS | PASS |
+| u15 | PASS | PASS | PASS |
+| u16 | PASS | PASS | PASS |
+| u17 | PASS | PASS | PASS |
+| u18 | PASS | PASS | PASS |
+| u19 | PASS | PASS | FAIL (wrong_result_set) |
+| u20 | PASS | PASS | PASS |
+| u21 | PASS | PASS | PASS |
+| u22 | PASS | PASS | PASS |
+| u23 | FAIL (wrong_result_set) | PASS | FAIL (wrong_result_set) |
+| u24 | FAIL (wrong_result_set) | FAIL (wrong_result_set) | PASS |
+| u25 | PASS | PASS | PASS |
+| u26 | FAIL (wrong_result_set) | FAIL (wrong_result_set) | FAIL (wrong_result_set) |
+| u27 | PASS | PASS | PASS |
+| u28 | FAIL (missing_columns) | PASS | PASS |
+| u29 | PASS | PASS | PASS |
+| u30 | PASS | PASS | PASS |
 
 ## Grader v2 re-score (post-hoc, disclosed)
-Test set = batch 1 (t01-t30, frozen 2026-10-23) + batch 2 (u01-u30, frozen 2026-10-23), identical authoring protocol; batch 2 graded under grader v2 from first run.
 
 Agent attempts frozen first-write-wins; no agent re-runs. Re-scoring applied two disclosed corrections:
 (1) answer-key errata — expected identifier repo_id replaced by repo name (1:1 isomorphic in catalog; questions ask "which repositories", never IDs);
@@ -55,9 +84,9 @@ v1 results above remain the primary frozen record.
 
 | Config | v1 | v2 | Delta |
 |---|---:|---:|---:|
-| A | 11/30 | 18/30 | +7 |
-| B | 12/30 | 20/30 | +8 |
-| C | 14/30 | 24/30 | +10 |
+| A | 37/60 | 44/60 | +7 |
+| B | 40/60 | 48/60 | +8 |
+| C | 40/60 | 50/60 | +10 |
 
 Changed verdicts (including changes between failure categories):
 
