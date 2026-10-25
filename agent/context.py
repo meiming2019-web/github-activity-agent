@@ -117,3 +117,51 @@ async def c2_date_context(session, glossary):
     if payload.get("truncated") or len(payload.get("rows", [])) != 1 or len(payload["rows"][0]) != 2:
         raise ValueError("Expected one complete frozen snapshot bounds row.")
     return frozen_date_boundaries(glossary, *payload["rows"][0])
+
+
+async def c2_date_context_for_question(question_text, session, glossary):
+    """Append the leftmost valid question window; retain legacy context verbatim.
+
+    Parse all mentions before selection, rejecting malformed/out-of-snapshot dates
+    even when another valid window precedes them. Decorative years do not match.
+    A window-shaped distractor can be selected: record this in v4 probes, never
+    filter questions on that basis. Phase B alone will connect the new scheduler
+    and post-process records with harness_version="c2.1" for C2/C3.
+    """
+    if not isinstance(question_text, str):
+        raise ValueError("Question text must be a string.")
+    base = await c2_date_context(session, glossary)
+    windows = json.loads(base.split("\n", 1)[1])["windows"]
+    snapshot = windows["full snapshot window"]
+    pattern = (
+        r"\b(?:the last 7 days|last week|previous week)\b|"
+        r"\bOctober ([1-9]|[12][0-9]|3[01]) through October "
+        r"([1-9]|[12][0-9]|3[01]), (2026)\b"
+    )
+    mentions = []
+    for match in re.finditer(pattern, question_text):
+        expression = match.group(0)
+        if match.group(1) is not None:
+            start = date(2026, 10, int(match.group(1)))
+            end = date(2026, 10, int(match.group(2))) + timedelta(days=1)
+            if not (snapshot["start_inclusive"] <= start.isoformat() < end.isoformat()
+                    <= snapshot["end_exclusive"]):
+                raise ValueError("Explicit question range is outside the frozen snapshot or reversed.")
+        else:
+            key = "last 7 days" if expression == "the last 7 days" else expression
+            start = date.fromisoformat(windows[key]["start_inclusive"])
+            end = date.fromisoformat(windows[key]["end_exclusive"])
+        mentions.append((match.start(), match.end(), start, end))
+    # Recognizable window syntax must not silently become a no-window control.
+    guards = (
+        r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\b|"
+        r"\bthrough\b|\b(?:the )?last \d+ days\b|\blast week\b|"
+        r"\bprevious week\b|\bpast two weeks\b|\bsince\b"
+    )
+    for marker in re.finditer(guards, question_text, flags=re.IGNORECASE):
+        if not any(left <= marker.start() and marker.end() <= right for left, right, _, _ in mentions):
+            raise ValueError("Malformed or unauthorized question window expression.")
+    if not mentions:
+        return base
+    _, _, start, end = mentions[0]
+    return base + f"\nQuestion window: [{start.isoformat()}, {end.isoformat()})"

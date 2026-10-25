@@ -1,23 +1,24 @@
-"""Offline unit tests for the independent bounds and fail-closed comparison gate."""
+"""Independent oracle tests and real offline checks for both C2.1 entry paths."""
 
+import asyncio
 from datetime import date
-import json
-from types import SimpleNamespace
-from unittest.mock import Mock
+import hashlib
+from pathlib import Path
 
 import pytest
 
+from agent import context
 from eval import check_bounds_consistency as checker
-from eval.v4_bounds import WINDOW_EXPRESSIONS, window_bounds
+from eval.check_c21_replay import BEFORE_SHA256, OfflineSession, replay
+from eval.v4_bounds import WINDOW_EXPRESSIONS, question_bounds, window_bounds
 
 
-EXPECTED = (
-    (15, 22), (15, 22), (8, 15), (8, 10), (8, 11),
-    (8, 13), (8, 15), (8, 18), (8, 22), (15, 22),
-)
+EXPECTED = ((15, 22), (15, 22), (8, 15), (8, 10), (8, 11),
+            (8, 13), (8, 15), (8, 18), (8, 22), (15, 22))
+ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("expression,days", zip(WINDOW_EXPRESSIONS, EXPECTED))
+@pytest.mark.parametrize("expression,days", tuple(zip(WINDOW_EXPRESSIONS, EXPECTED)))
 def test_independent_bounds_match_adjudication(expression, days):
     assert window_bounds(expression) == tuple(date(2026, 10, day) for day in days)
 
@@ -32,38 +33,37 @@ def test_unauthorized_or_outside_snapshot_windows_are_rejected(expression):
         window_bounds(expression)
 
 
-@pytest.mark.parametrize("fault", (None, "unrecognized", "mismatch"))
-def test_gate_checks_every_adopted_expression_and_fails_closed(monkeypatch, capsys, fault):
-    execute = Mock(return_value=SimpleNamespace(
-        truncated=False, rows=[["2026-10-08T00:02:49", "2026-10-21T23:58:01"]]
-    ))
-    windows = {}
-    for expression, (start, end) in zip(WINDOW_EXPRESSIONS, EXPECTED):
-        key = "last 7 days" if expression == "the last 7 days" else (
-            f'explicit range "{expression}"' if expression.startswith("October ") else expression
-        )
-        windows[key] = {"start_inclusive": f"2026-10-{start:02d}",
-                        "end_exclusive": f"2026-10-{end:02d}"}
-    target = 'explicit range "October 8 through October 10, 2026"'
-    if fault == "unrecognized":
-        del windows[target]
-    elif fault == "mismatch":
-        windows[target]["end_exclusive"] = "2026-10-12"
-    injection = Mock(return_value="BOUNDARIES\n" + json.dumps({"windows": windows}))
-    monkeypatch.setattr(checker, "execute_select", execute)
-    monkeypatch.setattr(checker, "frozen_date_boundaries", injection)
-    if fault is None:
-        report = checker.check_bounds_consistency()
-        assert all(item["status"] == "pass" for item in report["results"])
-    else:
-        with pytest.raises(AssertionError, match=f"October 8 through October 10, 2026: {fault}"):
-            checker.check_bounds_consistency()
-    evidence = json.loads(capsys.readouterr().out)
-    assert len(evidence["results"]) == len(WINDOW_EXPRESSIONS) == 10
-    assert evidence["snapshot_start_inclusive"] == "2026-10-08"
-    assert evidence["snapshot_end_exclusive"] == "2026-10-22"
-    assert evidence["results"][4]["status"] == (fault or "pass")
-    execute.assert_called_once_with(
-        "SELECT MIN(created_at) AS first_event, MAX(created_at) AS last_event FROM events"
-    )
-    injection.assert_called_once()
+@pytest.mark.parametrize("question", checker.INVALID_QUESTIONS)
+def test_real_new_entry_and_independent_parser_reject_invalid_questions(question):
+    glossary = (ROOT / "eval/glossary.md").read_text()
+    with pytest.raises(ValueError):
+        question_bounds(question)
+    with pytest.raises(ValueError):
+        asyncio.run(context.c2_date_context_for_question(question, OfflineSession(), glossary))
+
+
+def test_new_entry_real_offline_gate_all_105_intervals_and_adversarial_cases():
+    report = asyncio.run(checker.check_bounds_consistency())
+    assert report["legal_intervals"] == 105
+    assert report["case_count"] == 345
+    assert all(row["status"] in {"pass", "rejected_as_required"} for row in report["results"])
+
+
+def test_legacy_full_context_replay_uses_original_source_and_real_database(tmp_path):
+    current = (ROOT / "agent/context.py").read_bytes()
+    marker = b"\n\nasync def c2_date_context_for_question"
+    original = current[:current.index(marker)]
+    assert hashlib.sha256(original).hexdigest() == BEFORE_SHA256
+    before = tmp_path / "before.py"
+    before.write_bytes(original)
+    report = tmp_path / "replay.md"
+    result = asyncio.run(replay(before, report))
+    assert result == {"compared": 86, "identical": 86, "failures": []}
+    assert report.read_text().count("| PASS |") == 86
+
+
+def test_non_text_questions_are_rejected_without_a_session():
+    with pytest.raises(ValueError):
+        question_bounds(None)
+    with pytest.raises(ValueError):
+        asyncio.run(context.c2_date_context_for_question(None, None, ""))

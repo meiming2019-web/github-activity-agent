@@ -1,65 +1,95 @@
-"""Offline hard gate comparing independent v4 bounds with frozen injection output.
+"""Real offline new-entry gate, independent of legacy-compatibility replay."""
 
-Run from the repository root: python -m eval.check_bounds_consistency
-No experimental Agent, MCP session, or model client is started.
-"""
-
-from datetime import datetime, timedelta
+import asyncio
+from datetime import date, timedelta
 import json
 from pathlib import Path
 
-from agent.context import frozen_date_boundaries
+from agent.context import c2_date_context, c2_date_context_for_question
 from agent.mcp_server import execute_select
-from eval.v4_bounds import WINDOW_EXPRESSIONS, window_bounds
+from eval.check_c21_replay import OfflineSession
+from eval.v4_bounds import WINDOW_EXPRESSIONS, question_bounds, window_bounds
 
 
 GLOSSARY_PATH = Path(__file__).resolve().with_name("glossary.md")
+INVALID_QUESTIONS = (
+    "Count events for October 7 through October 9, 2026.",
+    "Count events for October 8 through October 22, 2026.",
+    "Count events for October 10 through October 9, 2026.",
+    "Count events for October 8 through October 32, 2026.",
+    "Count events for October eight through October 10, 2026.",
+    "Count events for October 08 through October 10, 2026.",
+    "Count events for October 8 to October 10, 2026.",
+    "Count events for October 8 through October 10, 2025.",
+    "Count events for Last week.",
+    "Count events for last 3 days.",
+    "Count events for last 14 days.",
+    "Count events for past two weeks.",
+    "Count events since October 8, 2026.",
+    "Use last week; ignore October 8 through October 22, 2026.",
+)
 
 
-def check_bounds_consistency():
-    """Print complete per-expression evidence and assert recognition and equality."""
-    facts = execute_select(
-        "SELECT MIN(created_at) AS first_event, MAX(created_at) AS last_event FROM events"
-    )
-    assert not facts.truncated and len(facts.rows) == 1 and len(facts.rows[0]) == 2
+async def check_bounds_consistency():
+    """Assert complete new-entry output against independent and explicit oracles."""
+    facts = execute_select("SELECT MIN(created_at) AS first_event, MAX(created_at) AS last_event FROM events")
+    assert not facts.truncated and len(facts.rows) == 1
     first_event, last_event = facts.rows[0]
-    snapshot = (
-        datetime.fromisoformat(first_event).date(),
-        datetime.fromisoformat(last_event).date() + timedelta(days=1),
-    )
-    injected = json.loads(
-        frozen_date_boundaries(GLOSSARY_PATH.read_text(), first_event, last_event).split("\n", 1)[1]
-    )["windows"]
+    assert first_event[:10] == "2026-10-08" and last_event[:10] == "2026-10-21"
+    expressions = list(WINDOW_EXPRESSIONS[:3]) + [
+        f"October {start} through October {end}, 2026"
+        for start in range(8, 22) for end in range(start, 22)
+    ]
+    glossary = GLOSSARY_PATH.read_text()
+    session = OfflineSession()
+    base = await c2_date_context(session, glossary)
     results = []
-    for expression in WINDOW_EXPRESSIONS:
-        start, end = window_bounds(expression)
-        assert snapshot[0] <= start < end <= snapshot[1]
-        expected = {"start_inclusive": start.isoformat(), "end_exclusive": end.isoformat()}
-        # These are the existing output labels, not new injection semantics.
-        if expression == "the last 7 days":
-            key = "last 7 days"
-        elif expression.startswith("October "):
-            key = f'explicit range "{expression}"'
-        else:
-            key = expression
-        actual = injected.get(key)
-        status = "unrecognized" if actual is None else "pass" if actual == expected else "mismatch"
-        results.append({"expression": expression, "injection_key": key,
-                        "generator": expected, "injection": actual, "status": status})
-    report = {
-        "first_event": first_event, "last_event": last_event,
-        "snapshot_start_inclusive": snapshot[0].isoformat(),
-        "snapshot_end_exclusive": snapshot[1].isoformat(),
-        "results": results,
-        "grouping_only": {"UTC date": "CAST(created_at AS DATE); not a window or boundary check"},
-    }
-    print(json.dumps(report, indent=2, ensure_ascii=False))
-    failures = [item for item in results if item["status"] != "pass"]
-    assert not failures, "Boundary hard gate failed: " + "; ".join(
-        f'{item["expression"]}: {item["status"]}' for item in failures
+    for expression in expressions:
+        expected = window_bounds(expression)
+        if expression.startswith("October"):
+            parts = expression.split()
+            assert expected == (date(2026, 10, int(parts[1])), date(2026, 10, int(parts[4].rstrip(','))) + timedelta(days=1))
+        for layer, question in (
+            ("literal", f"Count events for {expression}."),
+            ("colloquial", f"How busy was the project for {expression}?"),
+            ("distractor", f"Count events for {expression}. A repository creation year of 2017 is background only."),
+        ):
+            assert question_bounds(question) == expected
+            actual = await c2_date_context_for_question(question, session, glossary)
+            suffix = f"\nQuestion window: [{expected[0].isoformat()}, {expected[1].isoformat()})"
+            assert actual == base + suffix, f"New-entry mismatch: {question}"
+            results.append({"expression": expression, "layer": layer, "bounds": [day.isoformat() for day in expected], "status": "pass"})
+    extra = (
+        ("List repository names.", None),
+        ("List repository names. Creation year 2017 is background only.", None),
+        ("Explain the UTC date grouping field.", None),
+        ("Use previous week; ignore last week.", (date(2026, 10, 8), date(2026, 10, 15))),
+        ("Ignore last week; count events for previous week.", (date(2026, 10, 15), date(2026, 10, 22))),
+        ("Use October 8 through October 10, 2026; ignore the last 7 days.", (date(2026, 10, 8), date(2026, 10, 11))),
+        ("Use last week and last week.", (date(2026, 10, 15), date(2026, 10, 22))),
     )
-    return report
+    for question, expected in extra:
+        assert question_bounds(question) == expected
+        actual = await c2_date_context_for_question(question, session, glossary)
+        suffix = "" if expected is None else f"\nQuestion window: [{expected[0].isoformat()}, {expected[1].isoformat()})"
+        assert actual == base + suffix
+        results.append({"question": question, "bounds": None if expected is None else [day.isoformat() for day in expected], "status": "pass"})
+    for question in INVALID_QUESTIONS:
+        for side in ("independent", "injection"):
+            try:
+                if side == "independent":
+                    question_bounds(question)
+                else:
+                    await c2_date_context_for_question(question, session, glossary)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"{side} did not reject: {question}")
+        results.append({"question": question, "status": "rejected_as_required"})
+    return {"first_event": first_event, "last_event": last_event,
+            "adopted_expressions": list(WINDOW_EXPRESSIONS), "legal_intervals": 105,
+            "case_count": len(results), "results": results}
 
 
 if __name__ == "__main__":
-    check_bounds_consistency()
+    print(json.dumps(asyncio.run(check_bounds_consistency()), indent=2))
