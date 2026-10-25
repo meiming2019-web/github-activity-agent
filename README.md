@@ -1,5 +1,7 @@
 # GitHub Activity Query Agent
 
+[![tests](https://github.com/meiming2019-web/github-activity-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/meiming2019-web/github-activity-agent/actions/workflows/tests.yml)
+
 ## Project overview
 
 This project answers natural-language questions over a frozen 14-day GH Archive snapshot covering October 8 through October 21, 2026, UTC. The snapshot contains 28,203 events from a top-100-repository universe and stores activity and repository metadata in DuckDB. A self-built stdio MCP server exposes four read-only tools; the client adds an explicit `submit_answer` contract so the scored result comes from the submitted query. DeepSeek's `deepseek-chat` generates SQL, while a separate offline evaluator compares submitted rows with reference-query results.
