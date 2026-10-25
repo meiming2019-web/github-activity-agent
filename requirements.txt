@@ -6,3 +6,6 @@ sqlglot==30.24.0
 requests==2.34.2
 tqdm==4.70.1
 streamlit==1.66.1
+openai==3.36.1
+python-dotenv==1.2.4
+anyio==4.15.1

@@ -174,7 +174,7 @@ Improve schema linking so the agent can identify the required columns and aggreg
 
 ## Reproducibility
 
-Use Python 3.12 and the local `.venv`. `requirements.txt` pins the listed project packages; the existing agent also imports `openai` and `python-dotenv`, which are not currently listed there. Reproducing the environment therefore requires those existing SDK dependencies as well; this README does not claim the dependency manifest is complete.
+Use Python 3.12 and the local `.venv`. requirements.txt pins all project dependencies, including the openai SDK and python-dotenv used by the agent.
 
 The frozen database is `data/github.duckdb`; it is not a replacement for the question and result artifacts. Runtime credentials belong in the ignored `.env` as `DEEPSEEK_API_KEY`, never in committed files or rendered traces. The experiment and UI use the fixed reference date; the standalone CLI below sets it explicitly.
 
