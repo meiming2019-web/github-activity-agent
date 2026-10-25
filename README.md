@@ -285,6 +285,7 @@ The following SHA-256 values identify the actual local file bytes, not model ver
 | `eval/results/summary.md` | `9c122c5f21f1d15dd1da2237ba9549f10a49c9d541f8cedc1224dcbcffdcdcce` |
 | `eval/results/mechanism_probe.jsonl` | `081e290f4a06291ed2cf963ff468167ce4409b3f88e6125b745acc285c62d291` |
 | `data/github.duckdb` | `2a063cab4176b97cfd00ea8e92932c64346127ba1da4b120452fb48236c25812` |
+| `eval/v3_questions.jsonl` | `d663207daa8095a0b55efe5425456ee8f427077dbd54311718f1591c1515c3d6` |
 
 The database file is ignored by Git and distributed through the [v1.0-freeze Release](https://github.com/meiming2019-web/github-activity-agent/releases/tag/v1.0-freeze), rather than committed to the repository.
 
