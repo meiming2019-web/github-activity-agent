@@ -247,6 +247,14 @@ These are historical sanity-check targets, not guaranteed outcomes of a current 
 | Reconstruction count check | Database containing `events` and `repos` | None |
 | Streamlit UI and standalone agent CLI | `data/github.duckdb`; the UI also reads its glossary and development examples | `DEEPSEEK_API_KEY` in the project `.env` |
 
+### Full test suite and snapshot-free CI
+
+The **complete test suite requires the local frozen snapshot** at `data/github.duckdb`, verified against SHA-256 `2a063cab4176b97cfd00ea8e92932c64346127ba1da4b120452fb48236c25812`. The file is 140,783,616 bytes (140.783616 MB / 134.26171875 MiB), is ignored by Git, and is obtained using the frozen-snapshot instructions above.
+
+When that file is absent, `tests/conftest.py` skips only the explicitly inventoried frozen-snapshot tests: 16 boundary/replay cases in `test_v4_bounds.py` and 16 reference-execution/generation cases in `test_v4_generation.py` (32 parameterized cases total). Each skip explains the missing input and how to obtain it. Pure unit tests, parser/scheduler substitute tests, and tests that create their own temporary databases continue to run. The mocked finite-generation failure test also needs the real snapshot because the generator hashes its bytes.
+
+This guard checks absence only. An existing corrupt database, an inaccessible path, SQL errors, and assertion failures are not converted into skips. With the snapshot present, all existing assertions execute unchanged. A green snapshot-free CI run validates only the remaining tests; it does **not** establish that the complete frozen-data integration suite passed. CI currently runs the offline pytest command without downloading the snapshot. Neither test mode requires real API credentials or a model request.
+
 Run offline tests, verify the selected question file, or inspect pending experiment pairs:
 
 ```bash
