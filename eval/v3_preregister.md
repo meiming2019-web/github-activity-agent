@@ -1,0 +1,9 @@
+- Hypothesis H1: For questions requiring time-window interpretation (v3_01–v3_13, 13 questions), C2's number of window errors is ≤ C's. Mechanistic prediction: C2 eliminates "shifted window" errors (that is, interpreting relative time as an interval inconsistent with the frozen conventions).
+- Primary endpoint: Whole-question accuracy on v3_01–v3_13, reported separately for each configuration as X/13.
+- Secondary endpoint: Accuracy across all 26 questions, reported separately for each configuration as X/26.
+- Negative control: Results for v3_20–v3_23 (which contain no time window) must be exactly identical under C and C2. Any difference is treated as an injection side effect; interpretation of H1 is suspended pending manual investigation.
+- Decision rules (frozen):
+  - a) A run is correct if and only if the execution result of its final SQL on the frozen database matches the rows returned by the reference SQL in eval/v3_questions.jsonl. Column aliases are ignored. If the reference SQL contains ORDER BY, compare ordered row sequences; otherwise, compare multisets.
+  - b) For incorrect runs on v3_01–v3_13: if the actual time semantics of the final SQL differ from the reference window, record a window error. Expressions equivalent to the half-open window semantics (such as BETWEEN applied to DATE) are not errors. If classification is not unambiguous, mark "pending review" for human adjudication.
+  - c) first-write-wins: Record each (question_id, config) pair only once. Recorded results must not be rerun or overwritten.
+  - d) Do not calculate p-values. A tie between C2 and C (the null hypothesis holds) is an acceptable, reportable outcome.
