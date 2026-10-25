@@ -9,7 +9,7 @@ import sys
 from time import perf_counter
 
 from agent import loop
-from agent.context import REFERENCE_DATE, lookup_glossary, shared_context, tool_payload
+from agent.context import REFERENCE_DATE, lookup_glossary, shared_context, tool_payload, c2_date_context
 from eval.grader import grade_run
 
 
@@ -17,6 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 QUESTIONS_PATH = PROJECT_ROOT / "eval/github_test_questions.jsonl"
 GLOSSARY_PATH = PROJECT_ROOT / "eval/glossary.md"
 RESULTS_DIR = PROJECT_ROOT / "eval/results"
+DEVELOPMENT_QUESTIONS_PATH = PROJECT_ROOT / "eval/github_dev_questions.jsonl"
 
 
 async def run_config(config, client, session, question, shared, glossary, api_key):
@@ -25,10 +26,15 @@ async def run_config(config, client, session, question, shared, glossary, api_ke
     else:
         context = shared + ("\n\nUse lookup_glossary for definitions. Available topics include new_stars, "
                             "collaboration_events, active_contributors, time conventions, dataset scope, event types.")
-    return await loop.run_loop(
-        client, session, loop.new_trace(question, REFERENCE_DATE), api_key, config=config, system_context=context,
-        lookup_glossary=(lambda term: lookup_glossary(glossary, term)) if config == "C" else None,
+    if config == "C2":
+        context += "\n\n" + await c2_date_context(session, glossary)
+    trace = await loop.run_loop(
+        client, session, loop.new_trace(question, REFERENCE_DATE), api_key, config="C" if config == "C2" else config, system_context=context,
+        lookup_glossary=(lambda term: lookup_glossary(glossary, term)) if config in ("C", "C2") else None,
     )
+    if config == "C2":
+        trace["config"] = "C2"
+    return trace
 
 
 def write_summary(questions, configs, history, path):
@@ -67,6 +73,9 @@ def pending_pairs(questions, configs, history, question_id=None):
 
 
 async def run_experiments(questions, configs, client, session, glossary, results_dir, api_key="", question_id=None):
+    # Phase 1 never scores C2; future approved collection needs runs_v3.jsonl, not frozen histories/summary.
+    if "C2" in configs:
+        raise ValueError("C2 formal experiments are disabled in Phase 1; future results require a separate runs_v3.jsonl and no main summary writes.")
     results_dir = Path(results_dir)
     runs_path = results_dir / "runs.jsonl"
     history = [json.loads(line) for line in runs_path.read_text(encoding="utf-8").splitlines() if line.strip()] if runs_path.exists() else []
@@ -99,7 +108,7 @@ async def run_experiments(questions, configs, client, session, glossary, results
 
 async def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", choices=("A", "B", "C", "all"), required=True)
+    parser.add_argument("--config", choices=("A", "B", "C", "C2", "all"), required=True)
     parser.add_argument("--question-id", help="Run only this question ID, retaining the full-set summary denominator")
     parser.add_argument("--questions", type=Path, default=QUESTIONS_PATH, help="Question JSONL file")
     parser.add_argument("--dry-run", action="store_true", help="List pending question/config pairs without starting services or writing results")
@@ -109,6 +118,9 @@ async def main(argv=None):
         questions = [json.loads(line) for line in args.questions.read_text(encoding="utf-8").splitlines() if line.strip()]
         if args.question_id is not None and args.question_id not in {question["id"] for question in questions}:
             raise ValueError("The selected question ID does not exist.")
+        if args.config == "C2" and (args.questions.resolve() != DEVELOPMENT_QUESTIONS_PATH.resolve()
+                or args.question_id not in {f"d{index:02}" for index in range(1, 16)}):
+            raise ValueError("Phase 1 C2 permits only one selected d01-d15 question from the existing development file; no formal experiment or unfrozen questions.")
         configs = ("A", "B", "C") if args.config == "all" else (args.config,)
         if args.dry_run:
             runs_path = RESULTS_DIR / "runs.jsonl"
@@ -132,6 +144,12 @@ async def main(argv=None):
             async with loop.stdio_client(parameters) as (reader, writer):
                 async with loop.ClientSession(reader, writer, read_timeout_seconds=20) as session:
                     await session.initialize()
+                    if args.config == "C2":
+                        question = next(q for q in questions if q["id"] == args.question_id)
+                        shared = await shared_context(session)
+                        trace = await run_config("C2", client, session, question["question"], shared, glossary, api_key)
+                        print(json.dumps(loop.sanitize(trace, api_key), ensure_ascii=False, allow_nan=False))
+                        return 0 if trace["status"] == "completed" else 1
                     records = await run_experiments(questions, configs, client, session, glossary,
                                                     RESULTS_DIR, api_key, args.question_id)
         return 0 if all(record["status"] == "completed" for record in records) else 1
