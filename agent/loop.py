@@ -13,6 +13,8 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import get_default_environment, stdio_client
 from openai import AsyncOpenAI
 
+from agent.error_feedback import whitelist_feedback
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL = "deepseek-chat"
@@ -101,6 +103,9 @@ async def run_baseline(client, session, trace, api_key, context):
 async def run_loop(client, session, trace, api_key, *, config="B", system_context=None, lookup_glossary=None):
     if config == "A":
         return await run_baseline(client, session, trace, api_key, system_context)
+    feedback_enabled = config == "C3"
+    if feedback_enabled:
+        config = "C"
     sql_errors = 0
     try:
         if config not in ("B", "C"):
@@ -214,6 +219,11 @@ async def run_loop(client, session, trace, api_key, *, config="B", system_contex
                 payload = sanitize(payload, api_key)
                 content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, allow_nan=False)
                 entry["is_error"] = bool(result.is_error)
+                if feedback_enabled and name == "run_query" and result.is_error:
+                    feedback = whitelist_feedback(content)
+                    if feedback != content:
+                        entry["raw_error"] = content
+                        content = feedback
                 entry["result_summary"] = content[:1000]
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": content})
                 if name in {"run_query", "submit_answer"}:

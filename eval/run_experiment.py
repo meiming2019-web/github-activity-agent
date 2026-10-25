@@ -26,14 +26,14 @@ async def run_config(config, client, session, question, shared, glossary, api_ke
     else:
         context = shared + ("\n\nUse lookup_glossary for definitions. Available topics include new_stars, "
                             "collaboration_events, active_contributors, time conventions, dataset scope, event types.")
-    if config == "C2":
+    if config in ("C2", "C3"):
         context += "\n\n" + await c2_date_context(session, glossary)
     trace = await loop.run_loop(
         client, session, loop.new_trace(question, REFERENCE_DATE), api_key, config="C" if config == "C2" else config, system_context=context,
-        lookup_glossary=(lambda term: lookup_glossary(glossary, term)) if config in ("C", "C2") else None,
+        lookup_glossary=(lambda term: lookup_glossary(glossary, term)) if config in ("C", "C2", "C3") else None,
     )
-    if config == "C2":
-        trace["config"] = "C2"
+    if config in ("C2", "C3"):
+        trace["config"] = config
     return trace
 
 
@@ -73,6 +73,8 @@ def pending_pairs(questions, configs, history, question_id=None):
 
 
 async def run_experiments(questions, configs, client, session, glossary, results_dir, api_key="", question_id=None):
+    if "C3" in configs:
+        raise ValueError("C3 formal experiments are disabled in Phase B; no result/history writes are allowed.")
     # Phase 1 never scores C2; future approved collection needs runs_v3.jsonl, not frozen histories/summary.
     if "C2" in configs:
         raise ValueError("C2 formal experiments are disabled in Phase 1; future results require a separate runs_v3.jsonl and no main summary writes.")
@@ -108,7 +110,7 @@ async def run_experiments(questions, configs, client, session, glossary, results
 
 async def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", choices=("A", "B", "C", "C2", "all"), required=True)
+    parser.add_argument("--config", choices=("A", "B", "C", "C2", "C3", "all"), required=True)
     parser.add_argument("--question-id", help="Run only this question ID, retaining the full-set summary denominator")
     parser.add_argument("--questions", type=Path, default=QUESTIONS_PATH, help="Question JSONL file")
     parser.add_argument("--dry-run", action="store_true", help="List pending question/config pairs without starting services or writing results")
@@ -121,6 +123,9 @@ async def main(argv=None):
         if args.config == "C2" and (args.questions.resolve() != DEVELOPMENT_QUESTIONS_PATH.resolve()
                 or args.question_id not in {f"d{index:02}" for index in range(1, 16)}):
             raise ValueError("Phase 1 C2 permits only one selected d01-d15 question from the existing development file; no formal experiment or unfrozen questions.")
+        if args.config == "C3" and (args.questions.resolve() != DEVELOPMENT_QUESTIONS_PATH.resolve()
+                or args.question_id not in {f"d{index:02}" for index in range(1, 16)}):
+            raise ValueError("Phase B C3 permits only one selected d01-d15 development question; no formal experiment or history writes.")
         configs = ("A", "B", "C") if args.config == "all" else (args.config,)
         if args.dry_run:
             runs_path = RESULTS_DIR / "runs.jsonl"
@@ -144,10 +149,10 @@ async def main(argv=None):
             async with loop.stdio_client(parameters) as (reader, writer):
                 async with loop.ClientSession(reader, writer, read_timeout_seconds=20) as session:
                     await session.initialize()
-                    if args.config == "C2":
+                    if args.config in ("C2", "C3"):
                         question = next(q for q in questions if q["id"] == args.question_id)
                         shared = await shared_context(session)
-                        trace = await run_config("C2", client, session, question["question"], shared, glossary, api_key)
+                        trace = await run_config(args.config, client, session, question["question"], shared, glossary, api_key)
                         print(json.dumps(loop.sanitize(trace, api_key), ensure_ascii=False, allow_nan=False))
                         return 0 if trace["status"] == "completed" else 1
                     records = await run_experiments(questions, configs, client, session, glossary,
