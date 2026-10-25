@@ -178,7 +178,74 @@ Improve schema linking so the agent can identify the required columns and aggreg
 
 Use Python 3.12 and the local `.venv`. requirements.txt pins all project dependencies, including the openai SDK and python-dotenv used by the agent.
 
+```bash
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
 The frozen database is `data/github.duckdb`; it is not a replacement for the question and result artifacts. Runtime credentials belong in the ignored `.env` as `DEEPSEEK_API_KEY`, never in committed files or rendered traces. The experiment and UI use the fixed reference date; the standalone CLI below sets it explicitly.
+
+### Obtaining the frozen database
+
+**Preferred: use the published snapshot.** Open [Release v1.0-freeze](https://github.com/meiming2019-web/github-activity-agent/releases/tag/v1.0-freeze). From the repository root, create the destination directory:
+
+```bash
+mkdir -p data
+```
+
+Download the attached [github.duckdb.gz](https://github.com/meiming2019-web/github-activity-agent/releases/download/v1.0-freeze/github.duckdb.gz) and save it as `data/github.duckdb.gz`. Decompress the gzip attachment to `data/github.duckdb`, then check the **decompressed file**, not the gzip archive:
+
+```bash
+gunzip data/github.duckdb.gz
+printf '2a063cab4176b97cfd00ea8e92932c64346127ba1da4b120452fb48236c25812  data/github.duckdb\n' | shasum -a 256 -c -
+```
+
+The checksum command must report `data/github.duckdb: OK`. If obtaining an already decompressed copy, place it directly at `data/github.duckdb` and skip `gunzip`. Use the verified Release snapshot to reproduce the recorded evaluation.
+
+**Fallback: reconstruct from the sources.** Use a separate working copy without an existing database; the following commands write metadata and event tables. Keep the historical `repos.txt` list of 100 `owner/repo` entries rather than regenerating today's top repositories. Put a nonempty `GITHUB_TOKEN` assignment in the ignored project-root `.env`: `fetch_repos.py` reads that file directly, not an exported token alone. This GitHub REST token is distinct from `DEEPSEEK_API_KEY`; no DeepSeek key or model call is needed for reconstruction.
+
+Run these commands from the repository root. `fetch_repos.py` takes no CLI options. The ingestion hour bounds are inclusive and UTC:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B scripts/fetch_repos.py
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B scripts/ingest.py \
+  --start 2026-10-08-00 \
+  --end 2026-10-21-23 \
+  --repos repos.txt \
+  --raw-dir data/raw \
+  --database data/github.duckdb
+```
+
+Check the reconstructed tables against the historical counts of **28,203 events and 100 repos** through the existing read-only query interface:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B - <<'PY'
+from agent.mcp_server import run_query
+
+counts = run_query(
+    "SELECT (SELECT COUNT(*) FROM events) AS events, "
+    "(SELECT COUNT(*) FROM repos) AS repos"
+)
+print(dict(zip(counts.columns, counts.rows[0])))
+assert counts.rows == [[28203, 100]], "Counts differ from the historical snapshot."
+PY
+```
+
+These are historical sanity-check targets, not guaranteed outcomes of a current rebuild. GitHub metadata and repository names can change, API access can fail, and historical GH Archive files may be unavailable; these conditions can prevent reproducing the counts. Even matching row counts do not establish identical metadata or query answers. A reconstruction has no byte-identity guarantee, and the Release checksum above applies only to the frozen snapshot.
+
+### Command input dependencies
+
+| Command | Required inputs | Real credentials |
+|---|---|---|
+| Venv creation and pip installation | Python 3.12 and `requirements.txt`; no database | None; package installation needs network access |
+| Release download, decompression, and checksum | Release asset; no pre-existing database | None for the public Release |
+| Offline pytest command | Project code, tests, and repository test assets; no frozen database | None; fixtures use fake credentials |
+| `--dry-run` | Selected question file; existing `runs.jsonl` is read if present; no database | None |
+| `verify_questions.py` | `data/github.duckdb` and the selected question file | None |
+| `scripts/fetch_repos.py` | Fixed `repos.txt` and project-root `.env`; creates the default database if absent | `GITHUB_TOKEN` in that `.env`; GitHub REST access |
+| `scripts/ingest.py` | Fixed `repos.txt`, requested hour range, and available public GH Archive files; creates its tables if absent | None; public archive downloads need network access |
+| Reconstruction count check | Database containing `events` and `repos` | None |
+| Streamlit UI and standalone agent CLI | `data/github.duckdb`; the UI also reads its glossary and development examples | `DEEPSEEK_API_KEY` in the project `.env` |
 
 Run offline tests, verify the selected question file, or inspect pending experiment pairs:
 
@@ -217,6 +284,9 @@ The following SHA-256 values identify the actual local file bytes, not model ver
 | `eval/results/runs_v2.jsonl` | `a6400c28fa4d4e937e492f3ac1fa2d653ebcfa7ddaf0227f826772251af801ae` |
 | `eval/results/summary.md` | `9c122c5f21f1d15dd1da2237ba9549f10a49c9d541f8cedc1224dcbcffdcdcce` |
 | `eval/results/mechanism_probe.jsonl` | `081e290f4a06291ed2cf963ff468167ce4409b3f88e6125b745acc285c62d291` |
+| `data/github.duckdb` | `2a063cab4176b97cfd00ea8e92932c64346127ba1da4b120452fb48236c25812` |
+
+The database file is ignored by Git and distributed through the [v1.0-freeze Release](https://github.com/meiming2019-web/github-activity-agent/releases/tag/v1.0-freeze), rather than committed to the repository.
 
 ## References
 
