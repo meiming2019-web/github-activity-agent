@@ -25,6 +25,136 @@ The server checks SQL through a sqlglot allowlist, restricts query relations, op
 
 The local Streamlit interface in `ui/app.py` presents config C's answer, submitted SQL, agent trace, and usage statistics. It reuses the existing loop and a local ECharts asset.
 
+## Experiments
+
+All experiments use a frozen DuckDB snapshot of GH Archive events covering
+`[2026-10-08, 2026-10-22)` UTC, SHA-256
+`2a063cab4176b97cfd00ea8e92932c64346127ba1da4b120452fb48236c25812`,
+with a frozen metrics glossary ([eval/glossary.md](eval/glossary.md)). Run records,
+scores, analysis documents, and their hash ledgers live in `eval/`.
+
+### 1. Architecture ablation (A vs B vs C, v2 question set)
+
+- **A** one-shot, full glossary in context
+- **B** A + bounded tool loop (run queries, see errors, retry)
+- **C** B's loop + on-demand `lookup_glossary` instead of the full glossary
+
+On the 60-question set, the disclosed grader-v2 re-score recorded A 44/60, B 48/60, and C 50/60. The source preserves the original frozen v1 totals of 37/60, 40/60, and 40/60, respectively. The revised totals follow disclosed answer-key and column-matching corrections applied to frozen first-write-wins attempts; no agents were rerun. These are post-hoc re-scoring results, not a fresh experimental replication. Source: [eval/results/summary.md](eval/results/summary.md#grader-v2-re-score-post-hoc-disclosed).
+
+### 2. Mechanism probes (C2 / C3, v2 regression set)
+
+- **C2** = C + static glossary-derived date context
+- **C3** = C2 + whitelist error feedback
+
+On the already-seen v2 regression set, C2 scored 47/60 versus historical C's 50/60: three prior failures became correct and six prior passes became incorrect. The separate collection windows do not identify a causal effect of boundary injection. C3 also scored 47/60; it revived 2/5 previously circuit-broken questions and reduced sql_error_exhausted from 5 to 1, but two C2-correct questions became C3-incorrect, exceeding the allowance of at most one. The C3 report therefore suspends conclusions pending manual investigation; neither the aggregate tie nor execution recovery establishes a mechanism benefit. Sources: [eval/c2_on_v2_regression.md](eval/c2_on_v2_regression.md) and [eval/c3_on_v2.md](eval/c3_on_v2.md).
+
+### 3. v4: preregistered validation (confirmatory scope)
+
+Pre-registered before any run ([eval/v4_preregister.md](eval/v4_preregister.md)).
+300 questions (100 semantic cases × 3 phrasing tiers; 180 window / 90 advanced-SQL /
+30 control), 1,080 blind runs across two passes, with raw records committed before
+grading. Operational analysis definitions were subsequently resolved through
+explicitly labeled **post-registration adjudications**; these are not retroactive
+preregistration content. Full details: [eval/v4_report.md](eval/v4_report.md).
+
+- **Endpoint 1 (validated within the stated scope):** question-aware
+  window-boundary injection (C2.1) vs C on the frozen window-boundary endpoint —
+  C2.1-only correct 9 / C-only correct 0, paired n = 179 with one joint exclusion;
+  exact McNemar p = 0.00390625 (separate sensitivity: 8/0,
+  p = 0.0078125). The nine discordances include eight `both_wrong` classifications
+  and one `unparseable`, not nine independently established semantic errors.
+  No window-drift errors were observed under C2.1 in this run: all 180 submitted
+  window queries were classified correct. This does not establish a within-trace
+  causal explanation for the cross-configuration differences in §4.
+- **Endpoint 2 (not validated):** actionable whitelist error feedback
+  (C3.1) vs C2.1 on recovery at the first `run_query` after the first rejection —
+  C3.1-only recovery 2 / C2.1-only recovery 0, paired n = 27, p = 0.5.
+  Direction positive, evidence insufficient and the paired subset underpowered;
+  absence of a subsequent query or an identifiable result counts as failure under
+  the post-registration adjudication.
+- Guardrails did not trigger: control-stratum pairwise p = 1, and zero detected
+  extra time filters in 30 controls per configuration. This does not prove absence
+  of side effects.
+- The final adjudicated flip rule divides the combined flips of the two compared
+  configurations by their common eligible question count, not twice that count.
+  Endpoint 1: 1/40 = 0.025, below the threshold 0.025139664804469275.
+  Endpoint 2: 0/3 = 0.0, below 0.037037037037037035. Each threshold is half the
+  pass-1 absolute net discordance proportion. Neither endpoint was downgraded;
+  Endpoint 1 is close to its threshold, and Endpoint 2 has only three common
+  eligible questions. Eligibility changes are excluded from the flip denominator.
+- Scope: targeted prospective validation on a templated question distribution
+  over one frozen snapshot. No total-score superiority claims.
+
+### 4. Exploratory A/B ladder on the v4 question set (descriptive)
+
+A/B were run afterwards as a **non-pre-registered, descriptive** complement
+([eval/v4_ab_exploratory.md](eval/v4_ab_exploratory.md)). These numbers must not be
+merged into the v4 confirmatory conclusions. The combined table is descriptive:
+A/B and the C-family configurations were collected in separate runs.
+
+Row-set accuracy by stratum (n = 300 per config):
+
+| Config | All | Window /180 | Advanced /90 | Control /30 | API calls | Total tokens | K tokens / correct (derived) |
+|---|---|---|---|---|---|---|---|
+| A | 236/300 (78.67%) | 169 | 37 | 30 | 300 | 4,038,694 | 17.1 |
+| B | 251/300 (83.67%) | 158 | 63 | 30 | 1,044 | 15,153,387 | 60.4 |
+| C | 267/300 (89.00%) | 172 | 65 | 30 | 1,394 | 18,775,211 | 70.3 |
+| C2.1 | 269/300 (89.67%) | 179 | 60 | 30 | 1,280 | 17,440,670 | 64.8 |
+| C3.1 | 273/300 (91.00%) | 178 | 65 | 30 | 1,298 | 17,726,664 | 64.9 |
+
+Accuracy comes from the two reports above; advanced C-family counts combine their
+targeted and non-targeted rows. Exact API and token totals are checked against
+[the A/B records](eval/results/runs_v4_ab_exploratory.jsonl.gz) and
+[the C-family pass-1 records](eval/results/runs_v4.jsonl), including failed attempts.
+Only the explicitly derived column is rounded to one decimal:
+`(prompt tokens + completion tokens) / correct answers / 1000`.
+
+Findings:
+
+- **Different observed loop outcomes by stratum.** On window questions, B broke
+  19 questions that one-shot A answered correctly while rescuing 8 — a net loss
+  of 11. Here "broke" and "rescuing" describe paired final verdicts, not an
+  identified causal mechanism. On advanced SQL, B recorded 63/90 versus A's
+  37/90; A had 45 non-submissions, all in this stratum, and B had 18 here.
+  These observations do not prove that retrying caused each change.
+- **Final boundaries and row-set correctness are distinct.** One-shot A had
+  179/180 window queries classified correct and one unparseable query. B had
+  175 correct, one `end_wrong`, three unparseable, and one without final SQL.
+  C2.1 had 180/180 classified correct. These final-query observations do not
+  establish that boundaries are never a model limitation or that the loop caused
+  every observed difference.
+- **Observed accuracy and token use.** C2.1 achieved higher accuracy with fewer
+  tokens than C in this run. B used more tokens than A and had more correct
+  answers overall. Neither observation establishes dominance, a universal
+  value-for-token ranking, or the cause of the cost difference; injection and
+  feedback token costs were not separately recorded.
+- Boundary parser limitations are disclosed in the reports: `unparseable` does
+  not mean a semantic error. Frozen classifications remain unchanged; the
+  explicitly authorized v4_138 sensitivity in §3 is reported separately.
+
+### Limitations
+
+- Single frozen snapshot; templated question distribution; results do not
+  establish free-form natural-language robustness.
+- Recorded v4 responses report `deepseek-flash`; a floating model alias does not
+  pin a provider version. Temperature-0 whole-question flips in the pass-2
+  subset were C 4/60 (6.67%), C2.1 2/60 (3.33%), and C3.1 4/60 (6.67%). These
+  descriptive flips are distinct from the endpoint-specific downgrade rule.
+- Accuracy comparisons other than the two preregistered endpoints are
+  descriptive only. Operational post-registration adjudications and parser
+  limitations remain disclosed, including for the primary endpoints.
+
+### Future Work
+
+1. **D-variant pre-submit verification**: test a self-check step before
+   `submit_answer` (re-derive window bounds, verify row counts against a probe
+   query). Its benefit and cost remain untested.
+2. Test a whitelist-idiom cookbook in the prompt, targeting the observed
+   advanced-stratum non-submissions (18–45 per 90 across configurations).
+3. Evaluate extending actionable error feedback to the `submit_answer` path.
+4. Re-run the ladder on a non-templated, human-authored question set under a
+   separately specified protocol.
+
 ## Experiment design
 
 All configurations receive the same static context: complete names and types for `events` and `repos`, three sample rows per table, UTC conventions, and the frozen reference date **2026-10-22**. Schema and samples are fetched once at startup and reused; setup is outside the deliberative tool budget. Questions and reference answers are kept separate, and reference SQL is never injected into model context.
