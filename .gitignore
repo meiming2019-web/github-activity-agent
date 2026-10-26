@@ -5,3 +5,4 @@ __pycache__/
 *.duckdb
 eval/traces.jsonl
 .DS_Store
+eval/results/runs_v4_ab_exploratory.jsonl
