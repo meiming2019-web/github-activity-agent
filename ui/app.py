@@ -16,6 +16,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from agent import context, loop
+from agent import live_context
 from ui.charts import infer_chart
 
 
@@ -86,6 +87,9 @@ class TimedSession:
 
 
 async def run_demo(question, on_update=None):
+    if live_context.mode() == "live":
+        from agent.run_mode import run_live
+        return await run_live(question, on_update=on_update)
     trace = loop.new_trace(question, context.REFERENCE_DATE)
     timings, setup = {}, []
     api_key = ""
@@ -152,10 +156,17 @@ def render_result(result, slots, running=False):
     trace = result["trace"]
     with slots[0].container():
         st.subheader("Answer")
+        if trace.get("mode") == "live" and trace.get("live_coverage"):
+            coverage = trace["live_coverage"]
+            st.caption(f"Available complete-day interval: [{coverage['retention_start']}, "
+                       f"{coverage['complete_days_end_exclusive']}) · "
+                       f"Missing archive hours: {len(coverage['missing_complete_day_hours'])} · "
+                       f"Latest successful ingestion: {coverage['last_ingested_at']}. "
+                       "Data is as of ingestion time; missing or expired dates are not verified zero activity.")
         if trace.get("final_answer"):
             st.markdown(trace["final_answer"])
         elif running:
-            st.info("Querying the frozen snapshot…")
+            st.info("Querying live data…" if trace.get("mode") == "live" else "Querying the frozen snapshot…")
         else:
             st.info("Choose an example or ask a question to begin.")
         if not running and failure_category(trace) is not None and trace.get("final_answer"):
@@ -190,15 +201,23 @@ def render_result(result, slots, running=False):
         for cell, label, value in zip(metrics, ("API rounds", "Prompt tokens", "Completion tokens", "Total elapsed"),
                                       (result["rounds"], trace["prompt_tokens"], trace["completion_tokens"], f"{result['elapsed_ms'] / 1000:.2f} s")):
             cell.metric(label, value)
-        st.caption(f"{trace['tool_call_count']}/12 agent tool calls · config C · reference date {context.REFERENCE_DATE}")
+        st.caption(f"{trace['tool_call_count']}/12 agent tool calls · config C · reference date {trace.get('reference_date', context.REFERENCE_DATE)}")
 
 
 def main():
     st.set_page_config(page_title="GitHub Activity Explorer", page_icon="◈", layout="wide")
     st.title("GitHub Activity Explorer")
-    st.warning(BANNER)
+    selected_mode = live_context.mode()
+    live_context.switch_mode(st.session_state, selected_mode)
+    st.warning(BANNER if selected_mode == "eval" else "Live events · complete UTC days only · repo metadata frozen at 2026-10-22")
+    st.caption(f"Mode: {selected_mode}")
     st.caption("Read-only snapshot · Config C · Local demo")
-    questions = example_questions()
+    questions = example_questions() if selected_mode == "eval" else {
+        "d01": "Count events by type for the last 7 days",
+        "d06": "Count collaboration_events by UTC date for the last 7 days",
+        "d09": "Compare new_stars by repository for the last 7 days",
+        "d12": "Count events by UTC date for the last 14 days",
+    }
     st.session_state.setdefault("question", "")
     st.session_state.setdefault("demo_runs", [])
     for column, (id, label) in zip(st.columns(4), EXAMPLES):
@@ -214,7 +233,7 @@ def main():
         st.session_state["last_demo"] = result
     result = st.session_state.get("last_demo")
     if result is None:
-        result = {"trace": loop.new_trace("", context.REFERENCE_DATE), "setup_steps": [], "tool_timings_ms": {}, "rounds": 0, "elapsed_ms": 0}
+        result = {"trace": loop.new_trace("", context.REFERENCE_DATE if selected_mode == "eval" else live_context.utc_now().date().isoformat()), "setup_steps": [], "tool_timings_ms": {}, "rounds": 0, "elapsed_ms": 0}
     render_result(result, slots)
 
 

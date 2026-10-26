@@ -304,6 +304,11 @@ The complexity analysis is post-hoc. The glossary defines only three project-spe
 
 Improve schema linking so the agent can identify the required columns and aggregation grain before writing SQL. Evaluate self-consistency with an explicitly budgeted protocol, validate changes on a new frozen test set, and test robustness across temperature settings. These are proposed follow-ups, not implemented or measured results.
 
+## Live mode
+
+Opt in with `AGENT_MODE=live` for recent complete UTC days in an isolated database; eval mode remains frozen.
+See [Live mode](docs/live-mode.md) for supported windows, ingestion, metadata limits, scheduling, and the new mode-aware CLI.
+
 ## Reproducibility
 
 Use Python 3.12 and the local `.venv`. requirements.txt pins all project dependencies, including the openai SDK and python-dotenv used by the agent.
